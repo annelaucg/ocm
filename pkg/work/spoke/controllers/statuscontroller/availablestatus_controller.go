@@ -140,6 +140,7 @@ func (c *AvailableStatusController) syncManifestWork(ctx context.Context, origin
 		}
 
 		option := helper.FindManifestConfiguration(manifest.ResourceMeta, manifestWork.Spec.ManifestConfigs)
+		klog.Infof("Feedback scrape type: %s", option.FeedbackScrapeType)
 
 		// If resource is configured for WATCH, register target in the watch scraper infra; else ensure removal
 		if option != nil && option.FeedbackScrapeType == workapiv1.FeedbackScrapeTypeWATCH {
