@@ -89,6 +89,10 @@ func (d *deployReconciler) reconcile(ctx context.Context, mwrSet *workapiv1alpha
 
 			// TODO: Create NeedToApply function by workApplier to check the manifestWork->spec hash value from the cache.
 			if !workapplier.ManifestWorkEqual(newMW, mw) {
+				existingRolloutClsStatus = append(existingRolloutClsStatus, clustersdkv1alpha1.ClusterRolloutStatus{
+					ClusterName: mw.Namespace,
+					Status:      clustersdkv1alpha1.ToApply,
+				})
 				continue
 			}
 
