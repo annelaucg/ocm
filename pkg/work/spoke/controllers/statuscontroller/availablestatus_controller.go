@@ -115,7 +115,7 @@ func (c *AvailableStatusController) sync(ctx context.Context, controllerContext 
 }
 
 func (c *AvailableStatusController) syncManifestWork(ctx context.Context, originalManifestWork *workapiv1.ManifestWork) error {
-	klog.V(5).Infof("Reconciling ManifestWork %q", originalManifestWork.Name)
+	klog.Infof("Reconciling ManifestWork %q", originalManifestWork.Name)
 	manifestWork := originalManifestWork.DeepCopy()
 
 	// do nothing when finalizer is not added.
@@ -143,7 +143,7 @@ func (c *AvailableStatusController) syncManifestWork(ctx context.Context, origin
 
 		// If resource is configured for WATCH, register target in the watch scraper infra; else ensure removal
 		if option != nil && option.FeedbackScrapeType == workapiv1.FeedbackScrapeTypeWATCH {
-			klog.V(4).Infof("WATCH feedback enabled: registering target for ManifestWork %q, GVR=%s/%s/%s, ns/name=%s/%s",
+			klog.Infof("WATCH feedback enabled: registering target for ManifestWork %q, GVR=%s/%s/%s, ns/name=%s/%s",
 				manifestWork.Name,
 				manifest.ResourceMeta.Group, manifest.ResourceMeta.Version, manifest.ResourceMeta.Resource,
 				manifest.ResourceMeta.Namespace, manifest.ResourceMeta.Name)
@@ -183,7 +183,7 @@ func (c *AvailableStatusController) syncManifestWork(ctx context.Context, origin
 
 // patchOneResourceStatus updates a single manifest's status in the given manifestwork
 func (c *AvailableStatusController) patchOneResourceStatus(ctx context.Context, mwName string, resMeta workapiv1.ManifestResourceMeta, obj *unstructured.Unstructured, deleted bool) error {
-	klog.V(4).Infof("WATCH event: updating status for ManifestWork %q, GVR=%s/%s/%s, ns/name=%s/%s, deleted=%t",
+	klog.Infof("WATCH event: updating status for ManifestWork %q, GVR=%s/%s/%s, ns/name=%s/%s, deleted=%t",
 		mwName, resMeta.Group, resMeta.Version, resMeta.Resource, resMeta.Namespace, resMeta.Name, deleted)
 	// fetch from lister
 	work, err := c.manifestWorkLister.Get(mwName)
