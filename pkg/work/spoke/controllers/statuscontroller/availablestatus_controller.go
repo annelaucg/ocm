@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"sync"
+
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -44,6 +46,10 @@ type AvailableStatusController struct {
 	statusReader       *statusfeedback.StatusReader
 	conditionReader    *conditions.ConditionReader
 	syncInterval       time.Duration
+
+	// watch-based scraping
+	watchScraper   FeedbackScraper
+	watchStartOnce sync.Once
 }
 
 // NewAvailableStatusController returns a AvailableStatusController
@@ -72,6 +78,12 @@ func NewAvailableStatusController(
 		conditionReader:    conditionReader,
 	}
 
+	// initialize watch scraper with callback to patch one resource status
+	watchCb := func(mwName string, resMeta workapiv1.ManifestResourceMeta, obj *unstructured.Unstructured, deleted bool) {
+		_ = controller.patchOneResourceStatus(context.TODO(), mwName, resMeta, obj, deleted)
+	}
+	controller.watchScraper = NewWatchScraper(spokeDynamicClient, watchCb)
+
 	return factory.New().
 		WithInformersQueueKeysFunc(queue.QueueKeyByMetaName, manifestWorkInformer.Informer()).
 		WithSync(controller.sync).ToController("AvailableStatusController", recorder), nil
@@ -88,6 +100,9 @@ func (c *AvailableStatusController) sync(ctx context.Context, controllerContext 
 	if err != nil {
 		return fmt.Errorf("unable to fetch manifestwork %q: %w", manifestWorkName, err)
 	}
+
+	// lazily start watch scraper once we have a context
+	c.watchStartOnce.Do(func() { c.watchScraper.Start(ctx) })
 
 	err = c.syncManifestWork(ctx, manifestWork)
 	if err != nil {
@@ -126,6 +141,15 @@ func (c *AvailableStatusController) syncManifestWork(ctx context.Context, origin
 
 		option := helper.FindManifestConfiguration(manifest.ResourceMeta, manifestWork.Spec.ManifestConfigs)
 
+		// If resource is configured for WATCH, register target in the watch scraper infra; else ensure removal
+		if option != nil && option.FeedbackScrapeType == workapiv1.FeedbackScrapeTypeWATCH {
+			gvr := schema.GroupVersionResource{Group: manifest.ResourceMeta.Group, Version: manifest.ResourceMeta.Version, Resource: manifest.ResourceMeta.Resource}
+			target := ResourceTarget{GVR: gvr, Namespace: manifest.ResourceMeta.Namespace, Name: manifest.ResourceMeta.Name}
+			c.watchScraper.UpsertTarget(manifestWork.Name, manifest.ResourceMeta, target)
+		} else {
+			c.watchScraper.RemoveTarget(manifestWork.Name, manifest.ResourceMeta)
+		}
+
 		// Read status of the resource according to feedback rules.
 		values, statusFeedbackCondition := c.getFeedbackValues(obj, option)
 		meta.SetStatusCondition(manifestConditions, statusFeedbackCondition)
@@ -150,6 +174,64 @@ func (c *AvailableStatusController) syncManifestWork(ctx context.Context, origin
 
 	// update status of manifestwork. if this conflicts, try again later
 	_, err := c.patcher.PatchStatus(ctx, manifestWork, manifestWork.Status, originalManifestWork.Status)
+	return err
+}
+
+// patchOneResourceStatus updates a single manifest's status in the given manifestwork
+func (c *AvailableStatusController) patchOneResourceStatus(ctx context.Context, mwName string, resMeta workapiv1.ManifestResourceMeta, obj *unstructured.Unstructured, deleted bool) error {
+	// fetch from lister
+	work, err := c.manifestWorkLister.Get(mwName)
+	if err != nil {
+		return err
+	}
+	copy := work.DeepCopy()
+
+	// locate manifest index
+	idx := -1
+	for i, m := range copy.Status.ResourceStatus.Manifests {
+		if m.ResourceMeta.Group == resMeta.Group && m.ResourceMeta.Version == resMeta.Version && m.ResourceMeta.Resource == resMeta.Resource && m.ResourceMeta.Namespace == resMeta.Namespace && m.ResourceMeta.Name == resMeta.Name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+
+	manifestConditions := &copy.Status.ResourceStatus.Manifests[idx].Conditions
+	cond := metav1.Condition{Type: workapiv1.ManifestAvailable}
+	if deleted {
+		cond.Status = metav1.ConditionFalse
+		cond.Reason = "ResourceNotAvailable"
+		cond.Message = "Resource is not available"
+		meta.SetStatusCondition(manifestConditions, cond)
+	} else {
+		cond.Status = metav1.ConditionTrue
+		cond.Reason = "ResourceAvailable"
+		cond.Message = "Resource is available"
+		meta.SetStatusCondition(manifestConditions, cond)
+
+		// recompute feedback values via existing logic
+		option := helper.FindManifestConfiguration(copy.Status.ResourceStatus.Manifests[idx].ResourceMeta, copy.Spec.ManifestConfigs)
+		values, statusFeedbackCondition := c.getFeedbackValues(obj, option)
+		meta.SetStatusCondition(manifestConditions, statusFeedbackCondition)
+		copy.Status.ResourceStatus.Manifests[idx].StatusFeedbacks.Values = values
+
+		// evaluate condition rules
+		c.evaluateConditionRules(ctx, manifestConditions, obj, option, copy.Generation)
+	}
+
+	// aggregate and patch
+	aggregated := conditions.AggregateManifestConditions(copy.Generation, copy.Status.ResourceStatus.Manifests)
+	for _, ac := range aggregated {
+		meta.SetStatusCondition(&copy.Status.Conditions, ac)
+	}
+	conditions.PruneConditionsGeneratedByConditionRules(&copy.Status.Conditions, copy.Generation)
+
+	if equality.Semantic.DeepEqual(work.Status, copy.Status) {
+		return nil
+	}
+	_, err = c.patcher.PatchStatus(ctx, copy, copy.Status, work.Status)
 	return err
 }
 
