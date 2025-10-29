@@ -89,6 +89,8 @@ func (d *deployReconciler) reconcile(ctx context.Context, mwrSet *workapiv1alpha
 
 			// TODO: Create NeedToApply function by workApplier to check the manifestWork->spec hash value from the cache.
 			if !workapplier.ManifestWorkEqual(newMW, mw) {
+				// Treat spec-changed workloads as ToApply so rollout strategy applies equally on update
+				existingClusterNames.Insert(mw.Namespace)
 				existingRolloutClsStatus = append(existingRolloutClsStatus, clustersdkv1alpha1.ClusterRolloutStatus{
 					ClusterName: mw.Namespace,
 					Status:      clustersdkv1alpha1.ToApply,
@@ -133,7 +135,7 @@ func (d *deployReconciler) reconcile(ctx context.Context, mwrSet *workapiv1alpha
 			minRequeue = *rolloutResult.RecheckAfter
 		}
 
-		// Create ManifestWorks
+		// Create ManifestWorks for selected clusters (respect planner's maxConcurrency)
 		for _, rolloutStatue := range rolloutResult.ClustersToRollout {
 			if rolloutStatue.Status == clustersdkv1alpha1.ToApply {
 				mw, err := CreateManifestWork(mwrSet, rolloutStatue.ClusterName, placementRef.Name)
