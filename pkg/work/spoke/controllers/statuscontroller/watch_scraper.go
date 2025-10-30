@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	workapiv1 "open-cluster-management.io/api/work/v1"
 )
 
@@ -43,6 +44,7 @@ func (w *watchScraper) Start(ctx context.Context) {
 func (w *watchScraper) Stop() {}
 
 func (w *watchScraper) UpsertTarget(mwName string, meta workapiv1.ManifestResourceMeta, target ResourceTarget) {
+	klog.Infof("Adding a new resource to the target: %s", target.Name)
 	gvr := target.GVR
 	key := w.keyFor(target)
 
