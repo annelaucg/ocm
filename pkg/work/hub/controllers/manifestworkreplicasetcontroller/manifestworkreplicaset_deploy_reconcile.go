@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
 	clusterlister "open-cluster-management.io/api/client/cluster/listers/cluster/v1beta1"
 	worklisterv1 "open-cluster-management.io/api/client/work/listers/work/v1"
@@ -129,7 +130,8 @@ func (d *deployReconciler) reconcile(ctx context.Context, mwrSet *workapiv1alpha
 			minRequeue = *rolloutResult.RecheckAfter
 		}
 
-		// Create ManifestWorks
+		klog.Infof("rolloutResult: %v", rolloutResult.ClustersToRollout)
+		// Create ManifestWorks for selected clusters (respect planner's maxConcurrency)
 		for _, rolloutStatue := range rolloutResult.ClustersToRollout {
 			if rolloutStatue.Status == clustersdkv1alpha1.ToApply {
 				mw, err := CreateManifestWork(mwrSet, rolloutStatue.ClusterName, placementRef.Name)

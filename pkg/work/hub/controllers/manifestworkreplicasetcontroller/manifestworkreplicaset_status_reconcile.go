@@ -4,6 +4,7 @@ import (
 	"context"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	worklisterv1 "open-cluster-management.io/api/client/work/listers/work/v1"
 	"open-cluster-management.io/api/utils/work/v1/workapplier"
@@ -86,7 +87,15 @@ func (d *statusReconciler) reconcile(ctx context.Context, mwrSet *workapiv1alpha
 
 	if mwrSet.Status.Summary.Available == mwrSet.Status.Summary.Total && //nolint:gocritic
 		mwrSet.Status.Summary.Progressing == 0 && mwrSet.Status.Summary.Degraded == 0 {
-		apimeta.SetStatusCondition(&mwrSet.Status.Conditions, GetManifestworkApplied(workapiv1alpha1.ReasonAsExpected, ""))
+		// Only report AsExpected when rollout is completed on all selected clusters.
+		// This is indicated by the PlacementRolledOut condition being True with ReasonComplete.
+		rolledOutCond := apimeta.FindStatusCondition(mwrSet.Status.Conditions, workapiv1alpha1.ManifestWorkReplicaSetConditionPlacementRolledOut)
+		if rolledOutCond != nil && rolledOutCond.Status == metav1.ConditionTrue && rolledOutCond.Reason == workapiv1alpha1.ReasonComplete {
+			apimeta.SetStatusCondition(&mwrSet.Status.Conditions, GetManifestworkApplied(workapiv1alpha1.ReasonAsExpected, ""))
+		} else {
+			// Rollout not completed for all selected clusters yet; keep reporting Processing.
+			apimeta.SetStatusCondition(&mwrSet.Status.Conditions, GetManifestworkApplied(workapiv1alpha1.ReasonProcessing, ""))
+		}
 	} else if mwrSet.Status.Summary.Progressing > 0 && mwrSet.Status.Summary.Degraded == 0 {
 		apimeta.SetStatusCondition(&mwrSet.Status.Conditions, GetManifestworkApplied(workapiv1alpha1.ReasonProcessing, ""))
 	} else {

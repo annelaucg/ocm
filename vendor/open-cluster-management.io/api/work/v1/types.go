@@ -117,7 +117,25 @@ type ManifestConfigOption struct {
 	// +listMapKey:=condition
 	// +optional
 	ConditionRules []ConditionRule `json:"conditionRules,omitempty"`
+
+	// FeedbackScrapeType indicates how status feedback for this resource is collected.
+	// When set to POLL (default), the agent will periodically poll the resource to compute status and feedback.
+	// When set to WATCH, the agent will watch the resource and recompute status/feedback on events for near real-time updates.
+	// +kubebuilder:validation:Enum=POLL;WATCH
+	// +kubebuilder:default=POLL
+	// +optional
+	FeedbackScrapeType FeedbackScrapeType `json:"feedbackScrapeType,omitempty"`
 }
+
+// FeedbackScrapeType defines the scrape mechanism used for feedback collection
+type FeedbackScrapeType string
+
+const (
+	// FeedbackScrapeTypePOLL indicates periodic polling
+	FeedbackScrapeTypePOLL FeedbackScrapeType = "POLL"
+	// FeedbackScrapeTypeWATCH indicates watch-based updates
+	FeedbackScrapeTypeWATCH FeedbackScrapeType = "WATCH"
+)
 
 // +kubebuilder:validation:XValidation:rule="self.type != 'CEL' || self.condition != \"\"",message="Condition is required for CEL rules"
 type ConditionRule struct {
