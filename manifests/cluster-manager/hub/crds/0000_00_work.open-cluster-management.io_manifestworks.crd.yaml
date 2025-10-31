@@ -269,6 +269,16 @@ spec:
                         - type
                         type: object
                       type: array
+                    feedbackScrapeType:
+                          description: |-
+                            FeedbackScrapeType indicates how status feedback for this resource is collected.
+                            When set to POLL (default), the agent will periodically poll the resource to compute status and feedback.
+                            When set to WATCH, the agent will watch the resource and recompute status/feedback on events for near real-time updates.
+                          enum:
+                          - POLL
+                          - WATCH
+                          default: POLL
+                          type: string
                     resourceIdentifier:
                       description: |-
                         ResourceIdentifier represents the group, resource, name and namespace of a resoure.
